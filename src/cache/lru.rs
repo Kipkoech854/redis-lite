@@ -5,12 +5,17 @@ use std::error::Error;
 use std::rc::{Rc, Weak};
 use std::sync::{Arc, RwLock};
 
+//[TODO] figure out a way to store only one key so its not duplicated in the hasmap key and node key
 #[derive(Debug, Clone)]
 pub struct Node {
     key: String,
     value: String,
     prev: Option<Weak<RefCell<Node>>>,
     next: Option<Rc<RefCell<Node>>>,
+}
+
+pub struct RetNode {
+    pub value: String,
 }
 
 impl Node {
@@ -34,20 +39,13 @@ pub struct Cache {
 }
 
 impl Cache {
-    pub fn new(key: String, value: String, capacity: usize) -> Self {
-        //create new node
-        let node = Node::new(key.clone(), value);
-
-        // Wrap it in a local smart pointer
-        let ptr = Rc::new(RefCell::new(node));
-        let mut hash = HashMap::new();
-        hash.insert(key, Rc::clone(&ptr));
+    pub fn new(capacity: usize) -> Self {
         Cache {
-            head: Some(Rc::clone(&ptr)),
-            tail: Some(Rc::clone(&ptr)),
-            map: hash,
+            head: None,
+            tail: None,
+            map: HashMap::new(),
             capacity: capacity,
-            size: 1,
+            size: 0,
         }
     }
 
@@ -61,6 +59,7 @@ impl Cache {
 
         // Check if it exists
         if set_grd.map.contains_key(&node_key) {
+            drop(set_grd);
             //[TODO] use a signal for move to front
             Self::move_to_front(Arc::clone(&cache), map_node_pointer)?;
             return Ok(());
@@ -78,10 +77,7 @@ impl Cache {
         Ok(())
     }
 
-    pub fn add_to_front(
-        node: Rc<RefCell<Node>>,
-        cache: &mut Cache, // Accept a mutable reference to the Cache instead of consuming the guard
-    ) -> Result<(), Box<dyn Error>> {
+    pub fn add_to_front(node: Rc<RefCell<Node>>, cache: &mut Cache) -> Result<(), Box<dyn Error>> {
         // 1. Take the current head out of the cache cleanly.
         // .take() leaves `None` in the cache temporarily and gives us ownership of the old head.
         let exhead = cache.head.take();
@@ -213,5 +209,24 @@ impl Cache {
         }
 
         Ok(())
+    }
+
+    pub fn get(cache: Arc<RwLock<Cache>>, key: String) -> Option<RetNode> {
+        // Acquire a read lock from the RWLock, converting Result to Option
+        let read_grd = cache.read().ok()?;
+
+        // look if the key is in the hasmap
+        if let Some(node_rc) = read_grd.map.get(&key) {
+            // Ask refcell for read-only access to the node
+            let borrowed_node = node_rc.borrow();
+
+            // return a clone of the value
+            // cant return a reference to something inside a local refcell
+            return Some(RetNode {
+                value: borrowed_node.value.clone(),
+            });
+        }
+
+        None
     }
 }
