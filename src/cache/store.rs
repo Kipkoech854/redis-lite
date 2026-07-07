@@ -1,4 +1,5 @@
 use crate::cache::lru::Cache;
+use std::error::Error;
 use std::sync::{Arc, RwLock, mpsc};
 use std::thread;
 

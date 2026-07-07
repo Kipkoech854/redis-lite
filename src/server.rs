@@ -1,6 +1,6 @@
 use crate::{
     cache::{
-        lru::{self, Cache, RetNode},
+        lru::{self, Cache, Node, RetNode},
         store,
     },
     parser::{
@@ -9,10 +9,13 @@ use crate::{
     },
 };
 use std::{
+    cell::RefCell,
     error::Error,
+    fs,
     hash::{Hash, Hasher},
     io::{BufReader, prelude::*},
     net::{TcpListener, TcpStream},
+    rc::Rc,
     thread,
 };
 use std::{
@@ -131,16 +134,17 @@ fn handle_connection(
             return;
         }
     };
+    if request.method == "POST" {
+        //[TODO] make sure post requests are properly routed
+        return;
+    };
     //[TODO] check request header permissions
     // [TODO] ensure we check what the request type is for proper routing
-    //
     // get key from parsed request
     let key = request.path.clone();
 
     //figure out what cache thread could be holding this key
-    let mut hasher = DefaultHasher::new();
-    key.hash(&mut hasher);
-    let thread_id = (hasher.finish() % threads as u64) as usize;
+    let thread_id = get_shard_id(&key, threads);
 
     //create a temporary cross thread reply channel
     let (reply_sender, reply_receiver) = mpsc::channel::<Option<RetNode>>();
@@ -171,3 +175,37 @@ fn handle_connection(
     }
     //stream.write_all(response.as_bytes()).unwrap();
 }
+pub fn get_shard_id(key: &str, num_shards: usize) -> usize {
+    let mut hasher = DefaultHasher::new();
+    key.hash(&mut hasher);
+    (hasher.finish() % num_shards as u64) as usize
+}
+/*if request.method == "POST" {
+    let body = match request.body {
+        Some(body) => body,
+        None => {
+            let response = HttpResponse::new(
+                "400",
+                "Error :request body not found for a POST request".to_string(),
+            );
+            let _ = write!(
+                stream,
+                "HTTP/1.1 {} \r\nContent-Length: {}\r\n\r\n{}",
+                response.status_line, response.content_length, response.content
+            );
+            return;
+        }
+    };
+    cache_store.execute_on(thread_id, move |cache_arc| {
+        let node = Rc::new(RefCell::new(Node::new(request.path, body)));
+        let result = Cache::set(cache_arc, node);
+        match result {
+            Ok(()) => {
+                let _ = reply_sender.send(Some(RetNode {
+                    value: "Successfully added with post request".to_string(),
+                }));
+            }
+            Err(e) =>{}
+        }
+    })
+}; */
